@@ -172,7 +172,7 @@ def calcOrb(r, phi, vr, vp, pot, GM=1.0):
 
     a = 1.0 / (-2 * en / GM)
 
-    CJ = (r*OmB)**2 - 2*pot - v2
+    CJ = -2*pot + 2*omB*r*r*vp - v2
 
     return x, y, vx, vy, a, p, e, phip, j, en, en2, CJ
 
@@ -254,7 +254,7 @@ def runTheThing(filenames, Rmax=5.0, fixedPts=False,
     with h5.File(h5name, "w") as f:
         f.create_group('tracks')
         f.create_group('hist')
-        f.create_dataset('tracks/t', shape=(Nt), dtype=float)
+        f.create_dataset('tracks/t', shape=(Nt,), dtype=float)
         f.create_dataset('tracks/xy', shape=(Npts, Nt, 2), dtype=float)
         f.create_dataset('tracks/xy1', shape=(Npts, Nt, 2), dtype=float)
         f.create_dataset('tracks/xy2', shape=(Npts, Nt, 2), dtype=float)
@@ -457,17 +457,26 @@ def plotTheThing(h5name, Rmax=5.0):
         dMdjden = f['hist/dMdjden'][...]
         dMdjden2 = f['hist/dMdjden2'][...]
         dMdade = f['hist/dMdade'][...]
+       
+    x = xy[:, :, 0]
+    y = xy[:, :, 1]
+    r = np.sqrt(x**2 + y**2)
 
+    aB = 1.0
+    GM = 1.0
+    omB = math.sqrt(GM/aB**3)
+    v2 = vx**2 + vy**2
+    CJ = 2*omB*(x*vy-y*vx) - 2*pot - v2
 
     Npts, Nt = Sig.shape
-    tmin = t.min()
+    tmin = t[0]
     tmax = t.max()
     
     t0 = t - tmin
     NT = len(t[t>0])
 
     fig, ax = plt.subplots(3, 4, figsize=(12, 9))
-    figSig, axSig = plt.subplots(1, 1, figsize=(12, 9))
+    figOrb, axOrb = plt.subplots(1, 1, figsize=(12, 9))
 
     ax[0, 0].pcolormesh(jgrid, engrid, dMdjden.T,
                         norm=mpl.colors.LogNorm(),
@@ -481,25 +490,32 @@ def plotTheThing(h5name, Rmax=5.0):
 
     colors = ['C{0:d}'.format(i) for i in range(10)]
 
+
     for pt in range(Npts):
 
         # rell = p_i[i, j] / (1 + e_i[i, j]*np.cos(PHI-phip_i[i, j]))
 
         # l = axSig.plot(pts[j, 0], pts[j, 1], marker='.')
         c = colors[pt]
+
+        iOut = np.nonzero(r[pt] < 1)[0][0]
+        if iOut > NT:
+            iOut = NT
         
-        ax[0, 0].plot(j[pt, :NT], en[pt, :NT], color=c, lw=1)
-        ax[0, 1].plot(j[pt, :NT], en2[pt, :NT], color=c, lw=1)
-        ax[0, 2].plot(a[pt, :NT], e[pt, :NT], color=c, lw=1)
+        ax[0, 0].plot(j[pt, :iOut], en[pt, :iOut], color=c, lw=1)
+        ax[0, 1].plot(j[pt, :iOut], en2[pt, :iOut], color=c, lw=1)
+        ax[0, 2].plot(a[pt, :iOut], e[pt, :iOut], color=c, lw=1)
         ax[0, 3].plot(t0[:NT], Sig[pt, :NT], color=c)
-        ax[1, 0].plot(t0[:NT], j[pt, :NT], color=c)
-        ax[1, 1].plot(t0[:NT], en[pt, :NT], color=c)
-        ax[1, 2].plot(t0[:NT], en2[pt, :NT], color=c)
-        ax[1, 3].plot(t0[:NT], vort[pt, :NT], color=c)
-        ax[2, 0].plot(t0[:NT], a[pt, :NT], color=c)
-        ax[2, 1].plot(t0[:NT], e[pt, :NT], color=c)
-        ax[2, 2].plot(t0[:NT], phip[pt, :NT], color=c)
+        ax[1, 0].plot(t0[:NT], r[pt, :NT], color=c)
+        ax[1, 1].plot(t0[:iOut], j[pt, :iOut], color=c)
+        ax[1, 2].plot(t0[:iOut], en2[pt, :iOut], color=c)
+        ax[1, 3].plot(t0[:iOut], vort[pt, :iOut], color=c)
+        ax[2, 0].plot(t0[:iOut], a[pt, :iOut], color=c)
+        ax[2, 1].plot(t0[:iOut], e[pt, :iOut], color=c)
+        ax[2, 2].plot(t0[:iOut], phip[pt, :iOut], color=c)
         ax[2, 3].plot(t0[:NT], CJ[pt, :NT], color=c)
+
+        axOrb.plot(x[pt, :NT], y[pt, :NT], color=c, lw=1)
 
     ax[0, 0].set(xlim=(jgrid[0], jgrid[-1]), xlabel=r'$v_\phi$',
                  ylim=(engrid[0], engrid[-1]), ylabel=r'$\varepsilon_1$')
@@ -510,13 +526,15 @@ def plotTheThing(h5name, Rmax=5.0):
 
     ax[0, 3].set(xlim=(0.0, tmax-tmin), ylabel=r'$\Sigma$')
 
-    ax[1, 0].set(xlim=(0.0, tmax-tmin), ylabel=r'$v_\phi$',
+    ax[1, 0].set(xlim=(0.0, tmax-tmin), ylabel=r'$r$',
+                 ylim=(0.0, Rmax))
+    ax[1, 1].set(xlim=(0.0, tmax-tmin), ylabel=r'$v_\phi$',
                  ylim=(jgrid[0], jgrid[-1]))
-    ax[1, 1].set(xlim=(0.0, tmax-tmin), ylabel=r'$\varepsilon_1$',
-                 ylim=(engrid[0], engrid[-1]))
     ax[1, 2].set(xlim=(0.0, tmax-tmin), ylabel=r'$\varepsilon$',
                  ylim=(engrid[0], engrid[-1]))
     ax[1, 3].set(xlim=(0.0, tmax-tmin), ylabel=r'$\nabla \times v / \Sigma$')
+    ax[1, 3].set_yscale('symlog', linthresh=0.0001)
+
     ax[2, 0].set(xlim=(0.0, tmax-tmin), ylabel=r'$a$',
                  xlabel=r'$t\ (\Omega_b^{-1})$', ylim=(agrid[0], agrid[-1]))
     ax[2, 1].set(xlim=(0.0, tmax-tmin), ylabel=r'$e$',
@@ -524,7 +542,10 @@ def plotTheThing(h5name, Rmax=5.0):
     ax[2, 2].set(xlim=(0.0, tmax-tmin), ylabel=r'$\phi_p$',
                  xlabel=r'$t\ (\Omega_b^{-1})$')
     ax[2, 3].set(xlim=(0.0, tmax-tmin), ylabel=r'$C_J$',
-                 xlabel=r'$t\ (\Omega_b^{-1})$')
+                 xlabel=r'$t\ (\Omega_b^{-1})$', ylim=(0, 5))
+
+    axOrb.set(xlim=(-Rmax, Rmax), ylim=(-Rmax, Rmax))
+    axOrb.set_aspect('equal')
 
 
     fig.tight_layout()
@@ -533,6 +554,11 @@ def plotTheThing(h5name, Rmax=5.0):
     print("Saving", figname)
     fig.savefig(figname)
     plt.close(fig)
+
+    figname = plotDir / "orbits_full.pdf"
+    print("Saving", figname)
+    figOrb.savefig(figname)
+    plt.close(figOrb)
 
 
 if __name__ == "__main__":
